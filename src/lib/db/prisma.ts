@@ -26,7 +26,7 @@ function createPrismaClient() {
 
   const adapter = new PrismaPg(pool);
   return new PrismaClient({
-    log: isDev ? ['error', 'warn'] : ['error'],
+    log: isLocalDev ? ['error', 'warn'] : ['error'],
     adapter,
   });
 }
