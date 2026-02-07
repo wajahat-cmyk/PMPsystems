@@ -6,4 +6,4 @@
 cmds = ["npx prisma generate", "npx next build"]
 
 [start]
-cmd = "npx prisma migrate deploy && npx next start"
+cmd = "echo \"DATABASE_URL length: ${#DATABASE_URL}\" && npx prisma migrate deploy && npx next start"

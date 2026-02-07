@@ -1,9 +1,16 @@
 import "dotenv/config";
 import { defineConfig } from "prisma/config";
 
-// In production (Railway), DATABASE_URL is a standard postgres:// URL.
-// In dev, it's the prisma+postgres:// proxy URL from `prisma dev`.
 const url = process.env["DATABASE_URL"];
+
+// Debug: help diagnose Railway deployment issues
+if (!url) {
+  const dbVars = Object.keys(process.env).filter(k => /database|postgres|pg|railway/i.test(k));
+  console.error("[prisma.config] DATABASE_URL is NOT SET");
+  console.error("[prisma.config] Related env vars:", dbVars.join(", ") || "NONE");
+} else {
+  console.log("[prisma.config] DATABASE_URL is set (length:", url.length, ")");
+}
 
 export default defineConfig({
   schema: "prisma/schema.prisma",
@@ -11,6 +18,6 @@ export default defineConfig({
     path: "prisma/migrations",
   },
   datasource: {
-    url,
+    url: url ?? "",
   },
 });
