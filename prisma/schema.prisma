@@ -1,0 +1,473 @@
+// PMP Systems - Prisma Schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================================================
+// USER MANAGEMENT
+// ============================================================================
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  password      String
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts         Account[]
+  amazonProfile    AmazonProfile?
+  alerts           Alert[]
+  changeSets       ChangeSet[]
+  reportUploads    ReportUpload[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+// ============================================================================
+// AMAZON ADVERTISING API INTEGRATION
+// ============================================================================
+
+model AmazonProfile {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  profileId       String   @unique // Amazon Profile ID
+  countryCode     String
+  currencyCode    String
+  timezone        String
+  accountType     String   // SELLER or VENDOR
+
+  accessToken     String   @db.Text
+  refreshToken    String   @db.Text
+  tokenExpiresAt  DateTime
+
+  lastSyncAt      DateTime?
+  syncStatus      String   @default("pending") // pending, syncing, completed, failed
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  activeDatasetVersionId String?
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  campaigns       Campaign[]
+  syncHistory     SyncHistory[]
+  datasetVersions DatasetVersion[]
+
+  @@map("amazon_profiles")
+}
+
+// ============================================================================
+// CAMPAIGN DATA
+// ============================================================================
+
+model Campaign {
+  id                  String   @id @default(cuid())
+  profileId           String
+  amazonCampaignId    String   @unique // Amazon's campaign ID
+  name                String
+  campaignType        String   // SPONSORED_PRODUCTS, SPONSORED_BRANDS, SPONSORED_DISPLAY
+  targetingType       String   // MANUAL, AUTO
+  state               String   // ENABLED, PAUSED, ARCHIVED
+
+  dailyBudget         Decimal  @db.Decimal(10, 2)
+  startDate           DateTime
+  endDate             DateTime?
+
+  // Target metrics
+  targetAcos          Decimal? @db.Decimal(5, 2) // Target ACOS percentage
+  targetRoas          Decimal? @db.Decimal(10, 2) // Target ROAS
+
+  portfolio           String?
+  biddingStrategy     String?
+
+  // Placement bid modifiers
+  tosModifier         Decimal? @db.Decimal(5, 2) // Top of Search %
+  rosModifier         Decimal? @db.Decimal(5, 2) // Rest of Search %
+  pdpModifier         Decimal? @db.Decimal(5, 2) // Product Pages %
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  profile             AmazonProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  metrics             CampaignMetric[]
+  adGroups            AdGroup[]
+  budgetSnapshots     BudgetSnapshot[]
+  placementMetrics    PlacementMetric[]
+  searchTerms         SearchTerm[]     @relation("CampaignSearchTerms")
+
+  @@index([profileId])
+  @@index([state])
+  @@map("campaigns")
+}
+
+// ============================================================================
+// TIME-SERIES CAMPAIGN METRICS (Optimized for TimescaleDB)
+// ============================================================================
+
+model CampaignMetric {
+  id              String   @id @default(cuid())
+  campaignId      String
+  date            DateTime // Date of the metric
+
+  impressions     Int      @default(0)
+  clicks          Int      @default(0)
+  cost            Decimal  @db.Decimal(10, 2)
+  sales           Decimal  @db.Decimal(10, 2) // Attributed sales
+  orders          Int      @default(0)
+  units           Int      @default(0)
+
+  // Calculated metrics
+  ctr             Decimal  @db.Decimal(5, 2) // Click-through rate
+  cpc             Decimal  @db.Decimal(10, 2) // Cost per click
+  acos            Decimal  @db.Decimal(5, 2) // Advertising Cost of Sales
+  roas            Decimal  @db.Decimal(10, 2) // Return on Ad Spend
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  campaign        Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, date])
+  @@index([date])
+  @@index([campaignId, date])
+  @@map("campaign_metrics")
+}
+
+// ============================================================================
+// AD GROUPS
+// ============================================================================
+
+model AdGroup {
+  id                String   @id @default(cuid())
+  campaignId        String
+  amazonAdGroupId   String   @unique
+  name              String
+  defaultBid        Decimal  @db.Decimal(10, 2)
+  state             String   // ENABLED, PAUSED, ARCHIVED
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  campaign          Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  keywords          Keyword[]
+  searchTerms       SearchTerm[] @relation("AdGroupSearchTerms")
+
+  @@index([campaignId])
+  @@map("ad_groups")
+}
+
+// ============================================================================
+// KEYWORDS
+// ============================================================================
+
+model Keyword {
+  id              String   @id @default(cuid())
+  adGroupId       String
+  amazonKeywordId String   @unique
+  keywordText     String
+  matchType       String   // EXACT, PHRASE, BROAD
+  bid             Decimal  @db.Decimal(10, 2)
+  state           String   // ENABLED, PAUSED, ARCHIVED
+  syntaxGroup     String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  adGroup         AdGroup  @relation(fields: [adGroupId], references: [id], onDelete: Cascade)
+  metrics         KeywordMetric[]
+  searchTerms     SearchTerm[]
+
+  @@index([adGroupId])
+  @@index([keywordText])
+  @@index([syntaxGroup])
+  @@map("keywords")
+}
+
+// ============================================================================
+// TIME-SERIES KEYWORD METRICS
+// ============================================================================
+
+model KeywordMetric {
+  id              String   @id @default(cuid())
+  keywordId       String
+  date            DateTime
+
+  impressions     Int      @default(0)
+  clicks          Int      @default(0)
+  cost            Decimal  @db.Decimal(10, 2)
+  sales           Decimal  @db.Decimal(10, 2)
+  orders          Int      @default(0)
+
+  ctr             Decimal  @db.Decimal(5, 2)
+  cpc             Decimal  @db.Decimal(10, 2)
+  acos            Decimal  @db.Decimal(5, 2)
+  roas            Decimal  @db.Decimal(10, 2)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  keyword         Keyword  @relation(fields: [keywordId], references: [id], onDelete: Cascade)
+
+  @@unique([keywordId, date])
+  @@index([date])
+  @@index([keywordId, date])
+  @@map("keyword_metrics")
+}
+
+// ============================================================================
+// SEARCH TERMS (Customer search queries)
+// ============================================================================
+
+model SearchTerm {
+  id              String   @id @default(cuid())
+  keywordId       String
+  campaignId      String?
+  adGroupId       String?
+  searchTerm      String
+  date            DateTime
+
+  impressions     Int      @default(0)
+  clicks          Int      @default(0)
+  cost            Decimal  @db.Decimal(10, 2)
+  sales           Decimal  @db.Decimal(10, 2)
+  orders          Int      @default(0)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  keyword         Keyword   @relation(fields: [keywordId], references: [id], onDelete: Cascade)
+  campaign        Campaign? @relation("CampaignSearchTerms", fields: [campaignId], references: [id], onDelete: SetNull)
+  adGroup         AdGroup?  @relation("AdGroupSearchTerms", fields: [adGroupId], references: [id], onDelete: SetNull)
+
+  @@unique([keywordId, searchTerm, date])
+  @@index([date])
+  @@index([searchTerm])
+  @@index([campaignId])
+  @@index([adGroupId])
+  @@map("search_terms")
+}
+
+// ============================================================================
+// BUDGET TRACKING
+// ============================================================================
+
+model BudgetSnapshot {
+  id              String   @id @default(cuid())
+  campaignId      String
+  date            DateTime
+
+  dailyBudget     Decimal  @db.Decimal(10, 2)
+  spentToday      Decimal  @db.Decimal(10, 2)
+  remainingToday  Decimal  @db.Decimal(10, 2)
+  pacePercentage  Decimal  @db.Decimal(5, 2) // How fast budget is being consumed
+
+  // Monthly aggregates
+  monthToDateSpend Decimal @db.Decimal(10, 2)
+  projectedMonthly Decimal @db.Decimal(10, 2)
+
+  createdAt       DateTime @default(now())
+
+  campaign        Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, date])
+  @@index([date])
+  @@index([campaignId])
+  @@map("budget_snapshots")
+}
+
+// ============================================================================
+// ALERTS AND NOTIFICATIONS
+// ============================================================================
+
+model Alert {
+  id              String   @id @default(cuid())
+  userId          String
+  type            String   // BUDGET_EXCEEDED, LOW_ROAS, HIGH_ACOS, BUDGET_PACING
+  severity        String   // INFO, WARNING, CRITICAL
+  title           String
+  message         String   @db.Text
+  metadata        Json?    // Additional context
+
+  isRead          Boolean  @default(false)
+  isResolved      Boolean  @default(false)
+
+  triggeredAt     DateTime @default(now())
+  readAt          DateTime?
+  resolvedAt      DateTime?
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@index([triggeredAt])
+  @@map("alerts")
+}
+
+// ============================================================================
+// SYNC HISTORY
+// ============================================================================
+
+model SyncHistory {
+  id              String   @id @default(cuid())
+  profileId       String
+  syncType        String   // FULL, INCREMENTAL, METRICS
+  status          String   // SUCCESS, FAILED, PARTIAL
+
+  recordsProcessed Int     @default(0)
+  errorMessage    String?  @db.Text
+
+  startedAt       DateTime @default(now())
+  completedAt     DateTime?
+
+  profile         AmazonProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
+  @@index([startedAt])
+  @@map("sync_history")
+}
+
+// ============================================================================
+// PLACEMENT METRICS
+// ============================================================================
+
+model PlacementMetric {
+  id              String   @id @default(cuid())
+  campaignId      String
+  placement       String   // TOP_OF_SEARCH, REST_OF_SEARCH, PRODUCT_PAGES
+  date            DateTime
+
+  impressions     Int      @default(0)
+  clicks          Int      @default(0)
+  cost            Decimal  @db.Decimal(10, 2)
+  sales           Decimal  @db.Decimal(10, 2)
+  orders          Int      @default(0)
+
+  ctr             Decimal  @db.Decimal(5, 2)
+  cpc             Decimal  @db.Decimal(10, 2)
+  acos            Decimal  @db.Decimal(5, 2)
+  roas            Decimal  @db.Decimal(10, 2)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  campaign        Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, placement, date])
+  @@index([date])
+  @@index([campaignId, date])
+  @@map("placement_metrics")
+}
+
+// ============================================================================
+// CHANGE SETS
+// ============================================================================
+
+model ChangeSet {
+  id              String   @id @default(cuid())
+  userId          String
+  name            String?
+  status          String   @default("DRAFT") // DRAFT, EXPORTED, APPLIED, FAILED
+  errorMessage    String?  @db.Text
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  exportedAt      DateTime?
+  appliedAt       DateTime?
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items           ChangeSetItem[]
+
+  @@index([userId])
+  @@map("change_sets")
+}
+
+model ChangeSetItem {
+  id               String   @id @default(cuid())
+  changeSetId      String
+  entityType       String   // CAMPAIGN, KEYWORD
+  entityId         String   // Internal DB id
+  entityName       String
+  campaignName     String?
+  adGroupName      String?
+  amazonCampaignId String?
+  amazonAdGroupId  String?
+  amazonKeywordId  String?
+  matchType        String?  // EXACT, PHRASE, BROAD
+
+  changes          Json     // { bid?, budget?, state?, tosModifier?, rosModifier?, pdpModifier? }
+  previousValues   Json?    // Snapshot of old values for diff
+
+  createdAt        DateTime @default(now())
+
+  changeSet        ChangeSet @relation(fields: [changeSetId], references: [id], onDelete: Cascade)
+
+  @@index([changeSetId])
+  @@map("change_set_items")
+}
+
+// ============================================================================
+// REPORT UPLOADS
+// ============================================================================
+
+model ReportUpload {
+  id              String   @id @default(cuid())
+  userId          String
+  fileName        String
+  reportMonth     String   // e.g. "2026-01"
+  status          String   @default("PROCESSING") // PROCESSING, COMPLETED, FAILED
+  campaignCount   Int      @default(0)
+  keywordCount    Int      @default(0)
+  searchTermCount Int      @default(0)
+  errorMessage    String?  @db.Text
+  createdAt       DateTime @default(now())
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  datasetVersion  DatasetVersion?
+
+  @@index([userId])
+  @@map("report_uploads")
+}
+
+// ============================================================================
+// DATASET VERSIONING
+// ============================================================================
+
+model DatasetVersion {
+  id         String   @id @default(cuid())
+  profileId  String
+  uploadId   String?  @unique
+  label      String?
+  isActive   Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  profile    AmazonProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  upload     ReportUpload? @relation(fields: [uploadId], references: [id], onDelete: SetNull)
+
+  @@index([profileId, isActive])
+  @@map("dataset_versions")
+}
