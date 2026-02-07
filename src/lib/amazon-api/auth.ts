@@ -15,14 +15,18 @@ export async function refreshAmazonToken(profileId: string): Promise<string> {
     throw new Error('Amazon profile not found');
   }
 
+  // Use per-user credentials, fall back to env vars
+  const clientId = profile.clientId || process.env.AMAZON_CLIENT_ID!;
+  const clientSecret = profile.clientSecret || process.env.AMAZON_CLIENT_SECRET!;
+
   try {
     const response = await axios.post<TokenResponse>(
       'https://api.amazon.com/auth/o2/token',
       new URLSearchParams({
         grant_type: 'refresh_token',
         refresh_token: profile.refreshToken,
-        client_id: process.env.AMAZON_CLIENT_ID!,
-        client_secret: process.env.AMAZON_CLIENT_SECRET!,
+        client_id: clientId,
+        client_secret: clientSecret,
       }),
       {
         headers: {
@@ -38,7 +42,7 @@ export async function refreshAmazonToken(profileId: string): Promise<string> {
       where: { profileId },
       data: {
         accessToken: access_token,
-        refreshToken: refresh_token || profile.refreshToken, // Use new refresh token if provided
+        refreshToken: refresh_token || profile.refreshToken,
         tokenExpiresAt: new Date(Date.now() + expires_in * 1000),
       },
     });
@@ -71,13 +75,14 @@ export async function getAmazonClient(
   let accessToken = profile.accessToken;
 
   if (tokenExpiresIn < fiveMinutes) {
-    // Token is expired or will expire soon, refresh it
     accessToken = await refreshAmazonToken(profileId);
   }
 
-  const region = (process.env.AMAZON_API_REGION || 'NA') as ApiRegion;
+  // Use per-user credentials, fall back to env vars
+  const clientId = profile.clientId || process.env.AMAZON_CLIENT_ID!;
+  const region = (profile.region || process.env.AMAZON_API_REGION || 'NA') as ApiRegion;
 
-  return new AmazonAdvertisingClient(profileId, accessToken, region);
+  return new AmazonAdvertisingClient(profileId, accessToken, clientId, region);
 }
 
 /**
@@ -113,6 +118,7 @@ export async function hasAmazonProfile(userId: string): Promise<boolean> {
  */
 export async function validateAmazonCredentials(
   accessToken: string,
+  clientId: string,
   region: ApiRegion = 'NA'
 ): Promise<boolean> {
   try {
@@ -125,12 +131,12 @@ export async function validateAmazonCredentials(
     const response = await axios.get(`${baseURLs[region]}/v2/profiles`, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
-        'Amazon-Advertising-API-ClientId': process.env.AMAZON_CLIENT_ID!,
+        'Amazon-Advertising-API-ClientId': clientId,
       },
     });
 
     return response.status === 200;
-  } catch (error) {
+  } catch {
     return false;
   }
 }

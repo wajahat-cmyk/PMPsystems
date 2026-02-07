@@ -17,6 +17,7 @@ model User {
   email         String    @unique
   name          String?
   password      String
+  dataSource    String    @default("BULK") // "API" or "BULK"
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
@@ -61,6 +62,10 @@ model AmazonProfile {
   currencyCode    String
   timezone        String
   accountType     String   // SELLER or VENDOR
+
+  clientId        String?  @db.Text // LWA Client ID (per-user)
+  clientSecret    String?  @db.Text // LWA Client Secret (per-user)
+  region          String   @default("NA") // NA, EU, FE
 
   accessToken     String   @db.Text
   refreshToken    String   @db.Text

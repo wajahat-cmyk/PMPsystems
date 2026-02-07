@@ -14,7 +14,7 @@ export class AmazonAdvertisingClient {
   private accessToken: string;
   private region: ApiRegion;
 
-  constructor(profileId: string, accessToken: string, region: ApiRegion = 'NA') {
+  constructor(profileId: string, accessToken: string, clientId: string, region: ApiRegion = 'NA') {
     this.profileId = profileId;
     this.accessToken = accessToken;
     this.region = region;
@@ -24,7 +24,7 @@ export class AmazonAdvertisingClient {
     this.client = axios.create({
       baseURL,
       headers: {
-        'Amazon-Advertising-API-ClientId': process.env.AMAZON_CLIENT_ID!,
+        'Amazon-Advertising-API-ClientId': clientId,
         'Amazon-Advertising-API-Scope': profileId,
         Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
