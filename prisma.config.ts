@@ -3,14 +3,9 @@ import { defineConfig } from "prisma/config";
 
 const url = process.env["DATABASE_URL"];
 
-// Debug: help diagnose Railway deployment issues
-if (!url) {
-  const dbVars = Object.keys(process.env).filter(k => /database|postgres|pg|railway/i.test(k));
-  console.error("[prisma.config] DATABASE_URL is NOT SET");
-  console.error("[prisma.config] Related env vars:", dbVars.join(", ") || "NONE");
-} else {
-  console.log("[prisma.config] DATABASE_URL is set (length:", url.length, ")");
-}
+// Debug: show ALL env var names to find where Railway puts DB connection
+console.error("[prisma.config] ALL ENV VARS:", Object.keys(process.env).sort().join(", "));
+console.error("[prisma.config] DATABASE_URL value:", url ? `SET (length ${url.length})` : "NOT SET");
 
 export default defineConfig({
   schema: "prisma/schema.prisma",
