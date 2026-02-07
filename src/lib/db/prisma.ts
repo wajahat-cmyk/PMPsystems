@@ -7,17 +7,17 @@ const globalForPrisma = globalThis as unknown as {
 };
 
 function createPrismaClient() {
-  const isDev = process.env.NODE_ENV !== 'production';
-  const databaseUrl = isDev
-    ? 'postgres://postgres:postgres@localhost:51214/template1?sslmode=disable'
-    : process.env.DATABASE_URL!;
+  // Use DATABASE_URL when available (Railway/production); fall back to local PGlite
+  const isLocalDev = !process.env.DATABASE_URL;
+  const databaseUrl = process.env.DATABASE_URL
+    || 'postgres://postgres:postgres@localhost:51214/template1?sslmode=disable';
 
   const pool = new pg.Pool({
     connectionString: databaseUrl,
-    max: isDev ? 1 : 10,                // PGlite needs 1; real PG can handle more
-    idleTimeoutMillis: isDev ? 1 : 30000,
-    connectionTimeoutMillis: isDev ? 0 : 5000,
-    ssl: !isDev ? { rejectUnauthorized: false } : undefined,
+    max: isLocalDev ? 1 : 10,
+    idleTimeoutMillis: isLocalDev ? 1 : 30000,
+    connectionTimeoutMillis: isLocalDev ? 0 : 5000,
+    ssl: !isLocalDev ? { rejectUnauthorized: false } : undefined,
   });
 
   pool.on('error', (err) => {
