@@ -1,0 +1,9 @@
+# Railway build configuration (Nixpacks)
+# prisma migrate deploy runs at START time, not build time,
+# because DATABASE_URL is only available at runtime on Railway.
+
+[phases.build]
+cmds = ["npx prisma generate", "npx next build"]
+
+[start]
+cmd = "npx prisma migrate deploy && npx next start"
