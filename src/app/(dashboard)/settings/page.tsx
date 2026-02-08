@@ -54,23 +54,34 @@ export default function SettingsPage() {
   const [region, setRegion] = useState('NA');
   const [accountType, setAccountType] = useState('SELLER');
 
-  const activeSource = dataSourceData?.dataSource || 'BULK';
+  const serverSource = dataSourceData?.dataSource || 'BULK';
   const isConnected = credentials?.connected;
 
-  // Show form when switching to API with no credentials
+  // Local view mode controls which section is visible (independent of server state)
+  const [viewMode, setViewMode] = useState<'API' | 'BULK'>(serverSource);
+
+  // Sync viewMode when server data loads
   useEffect(() => {
-    if (activeSource === 'API' && !isConnected && !credsLoading) {
-      setEditing(true);
+    if (dataSourceData?.dataSource) {
+      setViewMode(dataSourceData.dataSource);
     }
-  }, [activeSource, isConnected, credsLoading]);
+  }, [dataSourceData?.dataSource]);
 
   function handleSourceToggle(source: 'API' | 'BULK') {
-    if (source === activeSource) return;
-    if (source === 'API' && !isConnected) {
-      // Allow switching to show the form, but don't call API yet
-      setEditing(true);
+    if (source === viewMode) return;
+    setViewMode(source);
+
+    if (source === 'API') {
+      // Just show the API section locally — don't call server until credentials are saved
+      if (!isConnected) {
+        setEditing(true);
+      }
+    } else {
+      // Switching to BULK is always allowed
+      if (serverSource === 'API') {
+        updateDataSource.mutate('BULK');
+      }
     }
-    updateDataSource.mutate(source);
   }
 
   function handleSaveCredentials(e: React.FormEvent) {
@@ -136,7 +147,7 @@ export default function SettingsPage() {
         <CardContent>
           <div className="flex gap-3">
             <Button
-              variant={activeSource === 'API' ? 'default' : 'outline'}
+              variant={viewMode === 'API' ? 'default' : 'outline'}
               className="flex-1"
               onClick={() => handleSourceToggle('API')}
               disabled={updateDataSource.isPending}
@@ -145,7 +156,7 @@ export default function SettingsPage() {
               Amazon API
             </Button>
             <Button
-              variant={activeSource === 'BULK' ? 'default' : 'outline'}
+              variant={viewMode === 'BULK' ? 'default' : 'outline'}
               className="flex-1"
               onClick={() => handleSourceToggle('BULK')}
               disabled={updateDataSource.isPending}
@@ -163,7 +174,7 @@ export default function SettingsPage() {
       </Card>
 
       {/* API Mode */}
-      {activeSource === 'API' && (
+      {viewMode === 'API' && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -358,7 +369,7 @@ export default function SettingsPage() {
       )}
 
       {/* Bulk File Mode */}
-      {activeSource === 'BULK' && (
+      {viewMode === 'BULK' && (
         <>
           <Card>
             <CardHeader>
