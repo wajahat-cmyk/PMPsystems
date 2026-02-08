@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build",
-    "start": "prisma migrate deploy && next start",
+    "start": "prisma migrate resolve --rolled-back 20260208035000_add_data_source_and_api_credentials 2>/dev/null; prisma migrate deploy && next start",
     "lint": "eslint"
   },
   "dependencies": {
